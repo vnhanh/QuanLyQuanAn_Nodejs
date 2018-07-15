@@ -2,6 +2,7 @@ const User =require('../models/user');
 const jwt = require('jsonwebtoken');
 const config =require('../config/database');
 const fs = require('fs');
+const C = require('../config/globalVariables');
 
 module.exports=(router,io)=>{
     router.post('/register', (req,res)=>{
@@ -174,25 +175,41 @@ module.exports=(router,io)=>{
                             if(!user.actived){
                                 res.json({success:false, message:'Tài khoản chưa được kích hoạt!.'})
                             }else{
-                                if(user.is_logining){
-                                    res.json({success:false, message:'Tài khoản đang đăng nhập ở máy khác!.'})
-                                }else{
-                                    const validPassword =user.comparePassword(req.body.password);
-                                    if(!validPassword){
-                                        res.json({success:false, message:'Sai mật khẩu.'});
-                                    }else{
-                                        user.is_logining = true;
-                                        user.save((err)=>{
-                                            if(err){
-                                                res.json({success: false, message:'Lỗi thao tác trên server', error:"Không thay đổi được dữ liệu trên server"})
-                                            }else{
-                                                const token = jwt.sign({ userId: user._id }, config.secret);
-                                                res.json({success:true, message:'Đăng nhập thành công!', token:token,
-                                                user:{username: user.username, type_account: user.type_account}});
-                                            }
-                                        })
+                                // if(user.is_logining){
+                                //     res.json({success:false, message:'Tài khoản đang đăng nhập ở máy khác!.'})
+                                // }else{
+                                //     const validPassword =user.comparePassword(req.body.password);
+                                //     if(!validPassword){
+                                //         res.json({success:false, message:'Sai mật khẩu.'});
+                                //     }else{
+                                //         user.is_logining = true;
+                                //         user.save((err)=>{
+                                //             if(err){
+                                //                 res.json({success: false, message:'Lỗi thao tác trên server', error:"Không thay đổi được dữ liệu trên server"})
+                                //             }else{
+                                //                 const token = jwt.sign({ userId: user._id }, config.secret);
+                                //                 res.json({success:true, message:'Đăng nhập thành công!', token:token,
+                                //                 user:{username: user.username, type_account: user.type_account}});
+                                //             }
+                                //         })
                                         
-                                    }
+                                //     }
+                                // }
+                                const validPassword =user.comparePassword(req.body.password);
+                                if(!validPassword){
+                                    res.json({success:false, message:'Sai mật khẩu.'});
+                                }else{
+                                    user.is_logining = true;
+                                    user.save((err)=>{
+                                        if(err){
+                                            res.json({success: false, message:'Lỗi thao tác trên server', error:"Không thay đổi được dữ liệu trên server"})
+                                        }else{
+                                            const token = jwt.sign({ userId: user._id }, config.secret);
+                                            res.json({success:true, message:'Đăng nhập thành công!', token:token,
+                                            user:{username: user.username, type_account: user.type_account}});
+                                        }
+                                    })
+                                    
                                 }
                             }
                           
@@ -411,9 +428,11 @@ module.exports=(router,io)=>{
                               res.json({ success: false, message: err }); // Return error message
                             }
                           } else {
-                            fs.unlink('public/avatar/'+ req.body.usl_profile_old, (err) => {
-                                if (err) throw err;
-                            });
+                            if(req.body.usl_profile_old != 'default.png'){
+                                fs.unlink('public/avatar/'+ req.body.usl_profile_old, (err) => {
+                                    if (err) throw err;
+                                });
+                            }
                             res.json({ success: true, message: 'Ảnh đại diện đã được cập nhật!' }); // Return success message
                             io.sockets.emit("server-update-avatar-employee",{user:user});
                         }
