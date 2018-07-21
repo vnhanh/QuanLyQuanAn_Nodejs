@@ -35,6 +35,14 @@ module.exports = (router, io) => {
                     
                     order.time_created = time
                     order.flag_status = C.PENDING_FLAG
+
+                    var length = order.detail_orders.length
+                    for(var i = 0; i < length; i++){
+                        var detail = order.detail_orders[i]
+                        detail.flag_status = parseInt(C.PENDING_FLAG)
+                        order.detail_orders.set(i,detail)
+                    }
+
                     order.save((err)=>{
                         if(err){
                             res.json({ success: false, message: 'Lỗi lưu hóa đơn trên server !', error : err })
@@ -148,6 +156,56 @@ module.exports = (router, io) => {
                     }
                 }
             }).sort({ '_id': -1 });
+        }
+    });
+
+    router.get('/loadOrder/:id', (req, res) => {
+        if (!req.params.id) {
+            res.json({ success: false, message: 'Chưa nhập mã hóa đơn!' });
+        } else {
+            Order.findOne({ id: req.params.id }, (err, order) => {
+                if (err) {
+                    console.log("load order:error:"+err)
+                    res.json({ success: false, message: err });
+                } else {
+                    if (!order) {
+                        res.json({ success: false, message: 'Không tìm thấy hóa đơn.' });
+                    } else {
+                        var promises = order.tables.map((tableID)=>{
+                            return new Promise((resolve, reject)=>{
+                                Table.findOne({id:tableID}, (err, table)=>{
+                                    if(err){
+                                        console.log("load order: find table failed:error:"+err)
+                                        reject(tableID)
+                                    }else{
+                                        resolve(table)
+                                    }
+                                })
+                            })
+                        })
+
+                        Promise.all(promises)
+                        .then((resolve)=>{
+                            var result = JSON.parse(JSON.stringify(resolve))
+                            var tables = []
+                            for(var index in result){
+                                var _res = result[index]
+                                var table = {}
+                                table.id = _res.id
+                                table.actived = _res.actived
+                                table.region_id = _res.region_id
+                                table.order_id = _res.order_id
+                                tables.push(table)
+                            }
+                            
+                            res.json({ success: true, order: order, tables: tables });
+                        }, (reject)=>{
+                            console.log("load order: Promise finish:error:"+JSON.stringify(reject))
+                            res.json({ success: false, message: "Tải hóa đơn không thành công", error:resolve });
+                        })
+                    }
+                }
+            });
         }
     });
 
@@ -282,9 +340,8 @@ module.exports = (router, io) => {
         }).sort({ '_id': -1 });
     });
 
-
     router.put('/updateStatusOrder', (req, res) => {
-        // console.log("updateStatusOrder():request:"+JSON.stringify(req.body))
+        console.log("updateStatusOrder():request:"+JSON.stringify(req.body))
         if (!req.body.id) {
             res.json({ success: false, message: 'Chưa cung cấp mã món' });
         } else {
@@ -298,6 +355,12 @@ module.exports = (router, io) => {
                         var oldStatus = order.flag_status
                         var flag = req.body.flag_status;
                         order.flag_status = flag;
+                        var length = order.detail_orders.length
+                        for(var i = 0; i < length; i++){
+                            var detail = order.detail_orders[i]
+                            detail.flag_status = parseInt(flag);
+                            order.detail_orders.set(i,detail)
+                        }
 
                         var available = true;
 
@@ -346,6 +409,7 @@ module.exports = (router, io) => {
                                         res.json({ success: false, message: err }); 
                                     }
                                 } else {
+                                    console.log("update status order:success:flag_status:"+order.flag_status)
                                     res.json({ success: true, message: 'Trạng thái hóa đơn đã được thanh toán!', old_status: oldStatus, order: order });
                                     io.sockets.emit("server-update-status-order", { old_status: oldStatus, order: order });
                                 }
@@ -363,7 +427,8 @@ module.exports = (router, io) => {
         if (!req.body.orderID) {
             res.json({ success: false, message: 'Chưa cung cấp mã order' });
         } else {
-            Order.findOne({ id: req.body.orderID }, (err, order) => {
+            var orderID = req.body.orderID
+            Order.findOne({ id: orderID }, (err, order) => {
                 if (err) {
                     res.json({ success: false, message: err }); // Return error message
                 } else {
@@ -390,6 +455,8 @@ module.exports = (router, io) => {
                             } else {
 
                                 var newDetail = {
+                                    id : orderID + "/" + foodID,
+                                    order_id : orderID,
                                     food_id : foodID,
                                     food_name : req.body.foodName,
                                     price_unit : parseInt(req.body.priceUnit),
@@ -1163,6 +1230,212 @@ module.exports = (router, io) => {
                     }
                 })
             }
+        }
+    })
+
+    router.put('/updateStatusDetailOrder', (req, res) => {
+        // console.log("updateStatusDetailOrder():request:"+JSON.stringify(req.body))
+        if (!req.body.order_id) {
+            res.json({ success: false, message: 'Chưa cung cấp mã hóa đơn' })
+        } 
+        else if (!req.body.detail_order_id){
+            res.json({ success: false, message: 'Chưa cung cấp mã chi tiết hóa đơn' })
+        } 
+        else if(!req.body.flag_status){
+            res.json({ success: false, message: 'Chưa cung cấp trạng thái hóa đơn' })
+        }
+        else {
+            var orderID = req.body.order_id
+            var detailOrderID = req.body.detail_order_id
+            var newStatus = parseInt(req.body.flag_status)
+        
+            Order.findOne({id:orderID}, (err, order)=>{
+                if(err){
+                    console.log("update status detail order count error:"+err)
+                    res.json({ success: false, message: 'Lỗi khi tìm kiếm hóa đơn', error:err })
+                }
+                else if(!order){
+                    console.log("update status detail order:not found order")
+                    res.json({ success: false, message: 'Không tìm thấy hóa đơn' })
+                } 
+                else{
+                    var parentOldStatus = order.flag_status
+                    var isChanged = true
+                    var isFound = false
+                    var length = order.detail_orders.length
+                    var oldStatus = -1
+
+                    for(var i = 0; i < length; i++){
+                        var detail = order.detail_orders[i]
+                        if(detail.id == detailOrderID){
+                            isFound = true
+                            oldStatus = parseInt(detail.flag_status)
+                            if(oldStatus == newStatus){
+                                isChanged = false
+                            }
+                            else{
+                                detail.flag_status = newStatus
+                                order.detail_orders.set(i, detail)
+                            }
+                            i = length
+                        }
+                    }
+
+                    if(isFound){
+                        // status mới bằng status cũ
+                        if(!isChanged){
+                            res.json({ 
+                                success: true, 
+                                message: 'Trạng thái hóa đơn trùng',
+                                order:order,  
+                                detail_order_id : detailOrderID,
+                                old_detail_order_status : newStatus,
+                                new_detail_order_status : newStatus
+                            })
+                        }
+                        else{
+                            if(parentOldStatus < newStatus){
+                                console.log("changed status of order")
+                                order.flag_status = newStatus
+                            }
+
+                            order.save((err)=>{
+                                if(err){
+                                    res.json({ success: false, message: 'Thao tác lỗi', error:err })
+                                }
+                                else{
+                                    res.json({ 
+                                        success: true, 
+                                        message: 'Trạng thái chi tiết hóa đơn đã được cập nhật', 
+                                        order:order,  
+                                        detail_order_id : detailOrderID,
+                                        old_detail_order_status : oldStatus,
+                                        new_detail_order_status : newStatus
+                                    })
+                                    io.sockets.emit("server-update-status-order",  {
+                                        old_status: oldStatus, 
+                                        detail_order_id: detailOrderID,
+                                        old_detail_order_status : oldStatus,
+                                        new_detail_order_status : newStatus,
+                                        order: order
+                                    });
+                                }
+                            })
+                        }
+                    }
+                }
+            })
+        }
+    });
+
+    
+    router.put('/removeStatusDetailOrder', (req, res) => {
+        // console.log("updateStatusDetailOrder():request:"+JSON.stringify(req.body))
+        if (!req.body.order_id) {
+            res.json({ success: false, message: 'Chưa cung cấp mã hóa đơn' })
+        } 
+        else if (!req.body.detail_order_id){
+            res.json({ success: false, message: 'Chưa cung cấp mã chi tiết hóa đơn' })
+        }else{
+            var orderID = req.body.order_id
+            Order.findOne({id:orderID}, (err, order)=>{
+                if(err){
+
+                }else{
+                    if(!order){
+
+                    }else{
+                        var detailOrderID = req.body.detail_order_id
+
+                        var length = order.detail_orders.length
+                        for(var i = 0; i < length; i++){
+                            var detail = order.detail_orders[i]
+                            var detailID = detail.id
+                            if(detailOrderID == detailID){
+                                var finalCost = order.final_cost
+                                var _count = parseInt(detail.count)
+                                var _priceUnit = parseInt(detail.price_unit)
+                                var _discount = parseInt(detail.discount)
+                                finalCost = finalCost - _count * (_priceUnit - _discount)
+                                order.final_cost = finalCost
+
+                                order.detail_orders.splice(i,1)
+                                i = length
+                            }
+                        }
+                        order.save((err)=>{
+                            if(err){
+
+                            }else{
+                                res.json({ 
+                                    success: true, 
+                                    message: 'Hủy món thành công', 
+                                    order:order
+                                })
+                                io.sockets.emit("server-remove-detail-order",  {
+                                    order_id : order.id,
+                                    detail_order_id : detailOrderID
+                                });
+                            }
+                        })
+                    }
+                }
+            })
+        }
+    })
+
+    router.put('/reProcessOrder', (req, res) => {
+        // console.log("updateStatusDetailOrder():request:"+JSON.stringify(req.body))
+        if (!req.body.order_id) {
+            res.json({ success: false, message: 'Chưa cung cấp mã hóa đơn' })
+        } 
+        else{
+            var orderID = req.body.order_id
+            Order.findOne({id:orderID}, (err, order)=>{
+                if(err){
+                    res.json({ success: false, message: 'Tìm hóa đơn thất bại', error:err })
+                }else{
+                    if(!order){
+                        res.json({ success: false, message: 'Không tìm thấy hóa đơn' })
+                    }else{
+                        var detailOrders = []
+                        var oldStatus = []
+                        var length = order.detail_orders.length
+                        for(var i = 0; i < length; i++){
+                            var detail = order.detail_orders[i]
+                            var _status = detail.flag_status
+                            if(_status == C.CREATING_FLAG){
+                                detail.flag_status = C.PENDING_FLAG
+                                order.detail_orders.set(i,detail)
+
+                                detailOrders.push(detail)
+                                oldStatus.push(C.CREATING_FLAG)
+                            }
+                        }
+                        order.save((err)=>{
+                            if(err){
+
+                            }else{
+                                res.json({ 
+                                    success: true, 
+                                    message: 'Thêm món thành công'
+                                })
+                                var length = detailOrders.length
+
+                                for(var i = 0; i < length; i++){
+                                    var _detail = detailOrders[i]
+                                    var _oldStatus = oldStatus[i]
+                                    io.sockets.emit("server-update-status-detail-order", { 
+                                        order:order,
+                                        detail_order : _detail,
+                                        old_status_detail_order : _oldStatus
+                                    })
+                                }
+                            }
+                        })
+                    }
+                }
+            })
         }
     })
 

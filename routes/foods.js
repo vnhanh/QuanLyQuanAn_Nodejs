@@ -5,6 +5,7 @@ const config =require('../config/database');// Import cấu hình database
 const fs = require('fs');
 const C = require('../config/globalVariables')
 const Order = require('../models/order')
+const CategoryFood = require('../models/categoryFood')
 
 module.exports =(router,io)=>{
 
@@ -393,10 +394,13 @@ module.exports =(router,io)=>{
     // body cung cấp mã món, số lượng tồn kho lưu trong client (để đối chiếu với db), 
     // số lượng đặt phát sinh
     router.put('/orderFood', (req, res) => {
-        if (!req.body.foodID) {
+        if (!req.body.orderID) {
+            res.json({ success: false, message: 'Chưa cung cấp mã order' });
+        }else if (!req.body.foodID) {
           res.json({ success: false, message: 'Chưa cung cấp mã món' }); 
         } else {
-          Food.findOne({ id: req.body.foodID }, (err, food) => {
+          var foodID = req.body.foodID
+          Food.findOne({ id: foodID }, (err, food) => {
             if (err) {
               res.json({ success: false, message:err }); // Return error message
             } else {
@@ -409,9 +413,11 @@ module.exports =(router,io)=>{
                     if(food.inventory != req.body.inventory){
                         res.json({ success: false, message: 'Thông tin lượng tồn kho sai lệch' }); // Return error message
                     }else{
+
                         const oldCount = req.body.oldCount;
                         const newCount = req.body.newCount;
                         const extra = newCount - oldCount;
+
                         if(food.inventory - extra < 0){
                             res.json({ success: false, message: 'Số lượng đặt vượt quá lượng tồn kho' });
                         }else{
@@ -428,10 +434,178 @@ module.exports =(router,io)=>{
                                         res.json({ success: false, message: "Lỗi lưu thông tin trên server", error:err }); // Return error message
                                       }
                                     } else {
-                                    //   res.json({ success: true, message: 'Đặt món thành công!', 
-                                    //   order_id:req.body.orderID, new_count:newCount, food:food});
-                                      res.json({ success: true, message: 'Đặt món thành công!', food:food});
-                                      io.sockets.emit("server-order-food",  {food: food});
+                        
+                                        var orderID = req.body.orderID
+                                        Order.findOne({ id: orderID }, (err, order) => {
+                                            if (err) {
+                                                res.json({ success: false, message: "Không tìm thấy hóa đơn", error:err }); // Return error message
+                                            } else {
+                                                if (!order) {
+                                                    res.json({ success: false, message: 'Không tìm thấy hóa đơn.' }); // Return error message
+                                                } else {
+                                                                            
+                                                    if (typeof order.final_cost === "undefined") {
+                                                        order.final_cost = 0;
+                                                    }
+                            
+                                                    // tìm chi tiết hóa đơn có chứa món muốn tìm
+                                                    var i = -1
+                                                    for (i = order.detail_orders.length - 1; i >= 0; i--) {
+                                                        if (order.detail_orders[i].food_id === foodID) {
+                                                            break;
+                                                        }
+                                                    }
+
+                                                    var detail = {}
+                                                    if(i > -1){
+                                                        detail = order.detail_orders[i]
+                                                    }
+                            
+                                                    // không tìm thấy
+                                                    if (i == -1 || detail.flag_status > C.PENDING_FLAG) {
+                                                        if (req.body.newCount == 0) {
+                                                            res.json({ success: false, message: 'Không thể tạo mới chi tiết hóa đơn cho món có số lượng đặt là 0' })
+                                                        } else {
+                                                            CategoryFood.findOne({id:food.category_id}, (err, cat)=>{
+                                                                if(err){
+                                                                    res.json({ success: false, message: 'Không thể tạo mới chi tiết hóa đơn vì không tìm thấy tên loại món', error:err })
+                                                                }else{
+                                                                    
+                                                                    var imageUrl = ""
+                                                                    
+                                                                    var imageUrls = food.url_image
+                                                                    var i = 0
+                                                                    while(i < imageUrls.length && (typeof imageUrls[i] === "undefined" || imageUrls[i] == null || imageUrls[i] == "")){
+                                                                        i++
+                                                                    }
+                                                                    if(i < imageUrls.length){
+                                                                        imageUrl = imageUrls[i]
+                                                                    }
+                                                                    var id
+                                                                    if(typeof detail != "undefined"){
+                                                                        id = detail.id+"1"
+                                                                    }else{
+                                                                        id = orderID + "/" + foodID
+                                                                    }
+                                                                    var newDetail = {
+                                                                        id : id,
+                                                                        order_id : orderID,
+                                                                        category_name : cat.name,
+                                                                        food_id : foodID,
+                                                                        food_name : food.name,
+                                                                        food_image : imageUrl,
+                                                                        price_unit : parseInt(food.price_unit),
+                                                                        discount : parseInt(food.discount),
+                                                                        count : parseInt(req.body.newCount),
+                                                                        flag_status : C.CREATING_FLAG
+                                                                    
+                                                                    }
+
+                                                                    order.detail_orders.push(newDetail)
+                                                                    order.final_cost = parseInt(order.final_cost) 
+                                                                                        + parseInt(newDetail.count) * (parseInt(newDetail.price_unit) - parseInt(newDetail.discount))
+                                        
+                                                                    order.save((err) => {
+                                                                        if (err) {
+                                                                            
+                                                                            console.log("order food: find food failed:error:"+err)
+                        
+                                                                            // console.log("updateOrCreateDetailOrder:create new detail failed:"+ err)
+                                                                            if (err.errors) {
+                                                                                res.json({ success: false, message: "Tạo mới chi tiết hóa đơn thất bại", error: err.errors });
+                                                                            } else {
+                                                                                res.json({ success: false, message: "Tạo mới chi tiết hóa đơn thất bại", err }); // Return error message
+                                                                            }
+                                                                        } else {
+                                                                                                
+                                                                            res.json({ success: true, message: 'Đặt món thành công', order: order, food:food});
+                                                                            io.sockets.emit("server-create-detail-order", { order_id: req.body.orderID, final_cost: order.final_cost, detail_order: newDetail });
+                                                                        }
+                                                                    });
+                                                                }
+                                                            })
+                                                        }
+                                                    } 
+                                                    // tìm thấy chi tiết hóa đơn có món muốn đặt
+                                                    else {
+                                                        var detail = order.detail_orders[i]
+
+                                                        // cờ xác định update hay remove detail order
+                                                        var isUpdated = true
+
+                                                        var newCount = req.body.newCount
+                                                        
+                                                        // hủy chi tiết hóa đơn (==0)
+                                                        if (newCount == 0) {
+                                                            var detail = order.detail_orders[i]
+                                                            order.final_cost = parseInt(order.final_cost)
+                                                                - parseInt(detail.count) * (parseInt(detail.price_unit) - parseInt(detail.discount))
+                                                            order.detail_orders.splice(i, 1)
+                            
+                                                            // remove detail order
+                                                            isUpdated = false
+                                                        }
+                                                        // cập nhật số lượng được đặt (nếu nó lớn hơn 0)
+                                                        else {
+                            
+                                                            var newPriceUnit = req.body.priceUnit
+                                                            var newDiscount = req.body.discount
+                                                            var newPrice = (parseInt(newPriceUnit) - parseInt(newDiscount)) * parseInt(newCount)
+                            
+                                                            var oldCount = parseInt(detail.count)
+                                                            var unitPrice = parseInt(detail.price_unit)
+                                                            var discount = parseInt(detail.discount)
+                            
+                                                            var oldPrice = (parseInt(unitPrice) - parseInt(discount)) * parseInt(oldCount)
+                                                            // cập nhật lại tổng tiền trong order và số lượng đặt món trong chi tiết hóa đơn
+                                                            order.final_cost = parseInt(order.final_cost) - parseInt(oldPrice) + parseInt(newPrice)
+                            
+                                                            var imageUrl = ""
+                                                                    
+                                                            var imageUrls = food.url_image
+                                                            var i = 0
+                                                            while(i < imageUrls.length && (typeof imageUrls[i] === "undefined" || imageUrls[i] == null || imageUrls[i] == "")){
+                                                                i++
+                                                            }
+                                                            if(i < imageUrls.length){
+                                                                imageUrl = imageUrls[i]
+                                                            }
+
+                                                            detail.food_image = imageUrl
+
+                                                            detail.food_name = food.name
+                                                            detail.price_unit = newPriceUnit
+                                                            detail.discount = newDiscount
+                                                            detail.count = newCount
+                                                            
+                                                            order.detail_orders.set(i, detail)
+                                                        }
+                                                        
+                                                        order.save((err) => {
+                                                            if (err) {
+                                                                // console.log("updateOrCreateDetailOrder:update detail order failed:"+JSON.stringify(err))
+                                                                if (err.errors) {
+                                                                    res.json({ success: false, message: "Cập nhật thông tin thất bại", error: err.errors });
+                                                                } else {
+                                                                    res.json({ success: false, message: "Cập nhật thông tin thất bại", err }); // Return error message
+                                                                }
+                                                            } else {
+                                                                res.json({ success: true, message: 'Đặt món thành công', order: order, food: food});
+                            
+                                                                // update detail order
+                                                                if (isUpdated) {
+                                                                    io.sockets.emit("server-update-detail-order", { order_id: req.body.orderID, final_cost: order.final_cost, detail_order: newDetail });
+                                                                }
+                                                                // remove detail order
+                                                                else {
+                                                                    io.sockets.emit("server-remove-detail-order", { order_id: req.body.orderID, final_cost: order.final_cost, detail_order: newDetail });
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        });
                                     }
                               });
                             }

@@ -39,11 +39,16 @@ const orderSchema = new Schema({
   description:{type: String },
   detail_orders:{type:Array},
   // detail_orders:[{
+  //   id : {type:String},
+  //   order_id : {type:String},
+  //   category_name: {type:String},
   //   food_id:{type: String},
+  //   food_image: {type:String},
   //   food_name:{type: String},
   //   price_unit:{type: String},
   //   discount:{type: String},
   //   count:{type: String},
+  //   flag_status : {type:Number}
   // }],
   number_customer:{type: Number, required:true},
   region_id:{type: Array},

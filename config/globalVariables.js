@@ -6,6 +6,7 @@ const EATING_FLAG = 4
 const PAYING_FLAG = 5
 const COMPLETE_FLAG = 6
 
+
 const ACCOUNT_CUSTOMER = 0
 const ACCOUNT_WAITER = 1
 const ACCOUNT_CASHIER = 2
