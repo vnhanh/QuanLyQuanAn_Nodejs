@@ -456,7 +456,7 @@ module.exports =(router,io)=>{
                                                         }
                                                     }
 
-                                                    var detail = {}
+                                                    var detail
                                                     if(i > -1){
                                                         detail = order.detail_orders[i]
                                                     }
@@ -485,8 +485,11 @@ module.exports =(router,io)=>{
                                                                     if(typeof detail != "undefined"){
                                                                         id = detail.id+"1"
                                                                     }else{
+                                                                        console.log("set id normal")
                                                                         id = orderID + "/" + foodID
                                                                     }
+                                                                    console.log("typeof detail:"+ (typeof detail))
+                                                                    console.log("id:"+id)
                                                                     var newDetail = {
                                                                         id : id,
                                                                         order_id : orderID,
@@ -528,16 +531,20 @@ module.exports =(router,io)=>{
                                                     } 
                                                     // tìm thấy chi tiết hóa đơn có món muốn đặt
                                                     else {
+                                                        console.log("update detail order")
                                                         var detail = order.detail_orders[i]
 
                                                         // cờ xác định update hay remove detail order
                                                         var isUpdated = true
 
                                                         var newCount = req.body.newCount
+
+                                                        var newDetail
                                                         
                                                         // hủy chi tiết hóa đơn (==0)
                                                         if (newCount == 0) {
                                                             var detail = order.detail_orders[i]
+                                                            newDetail = detail
                                                             order.final_cost = parseInt(order.final_cost)
                                                                 - parseInt(detail.count) * (parseInt(detail.price_unit) - parseInt(detail.discount))
                                                             order.detail_orders.splice(i, 1)
@@ -548,15 +555,17 @@ module.exports =(router,io)=>{
                                                         // cập nhật số lượng được đặt (nếu nó lớn hơn 0)
                                                         else {
                             
-                                                            var newPriceUnit = req.body.priceUnit
-                                                            var newDiscount = req.body.discount
+                                                            var newPriceUnit = food.price_unit
+                                                            var newDiscount = food.discount
                                                             var newPrice = (parseInt(newPriceUnit) - parseInt(newDiscount)) * parseInt(newCount)
                             
+
                                                             var oldCount = parseInt(detail.count)
                                                             var unitPrice = parseInt(detail.price_unit)
                                                             var discount = parseInt(detail.discount)
                             
                                                             var oldPrice = (parseInt(unitPrice) - parseInt(discount)) * parseInt(oldCount)
+                                                                                                                        
                                                             // cập nhật lại tổng tiền trong order và số lượng đặt món trong chi tiết hóa đơn
                                                             order.final_cost = parseInt(order.final_cost) - parseInt(oldPrice) + parseInt(newPrice)
                             
@@ -579,11 +588,13 @@ module.exports =(router,io)=>{
                                                             detail.count = newCount
                                                             
                                                             order.detail_orders.set(i, detail)
+
+                                                            newDetail = detail
                                                         }
                                                         
                                                         order.save((err) => {
                                                             if (err) {
-                                                                // console.log("updateOrCreateDetailOrder:update detail order failed:"+JSON.stringify(err))
+                                                                console.log("update detail order failed:"+JSON.stringify(err))
                                                                 if (err.errors) {
                                                                     res.json({ success: false, message: "Cập nhật thông tin thất bại", error: err.errors });
                                                                 } else {

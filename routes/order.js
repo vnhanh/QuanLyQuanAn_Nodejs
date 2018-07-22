@@ -36,11 +36,14 @@ module.exports = (router, io) => {
                     order.time_created = time
                     order.flag_status = C.PENDING_FLAG
 
+                    var detailOrders = []
+                    
                     var length = order.detail_orders.length
                     for(var i = 0; i < length; i++){
                         var detail = order.detail_orders[i]
                         detail.flag_status = parseInt(C.PENDING_FLAG)
                         order.detail_orders.set(i,detail)
+                        detailOrders.push(detail)
                     }
 
                     order.save((err)=>{
@@ -49,6 +52,23 @@ module.exports = (router, io) => {
                         }else{
                             res.json({ success: true, message: 'Tạo hóa đơn thành công !' })
                             io.sockets.emit("server-update-status-order",  {old_status: oldStatus, order: order});
+
+                            var length = detailOrders.length
+                            for(var i = 0; i < length; i++){
+                                var detailOrder = detailOrders[i]
+                                // io.sockets.emit("server-update-status-order",  {
+                                //     old_status: oldStatus, 
+                                //     detail_order_id: detailOrderID,
+                                //     old_detail_order_status : C.CREATING_FLAG,
+                                //     new_detail_order_status : C.PENDING_FLAG,
+                                //     order: order
+                                // });
+                                io.sockets.emit("server-update-status-detail-order", { 
+                                    order:order,
+                                    detail_order : detailOrder,
+                                    old_status_detail_order : C.CREATING_FLAG
+                                })
+                            }
                         }
                     })
                 }
@@ -341,7 +361,7 @@ module.exports = (router, io) => {
     });
 
     router.put('/updateStatusOrder', (req, res) => {
-        console.log("updateStatusOrder():request:"+JSON.stringify(req.body))
+        // console.log("updateStatusOrder():request:"+JSON.stringify(req.body))
         if (!req.body.id) {
             res.json({ success: false, message: 'Chưa cung cấp mã món' });
         } else {
@@ -1295,7 +1315,7 @@ module.exports = (router, io) => {
                         }
                         else{
                             if(parentOldStatus < newStatus){
-                                console.log("changed status of order")
+                                // console.log("changed status of order")
                                 order.flag_status = newStatus
                             }
 
@@ -1304,6 +1324,8 @@ module.exports = (router, io) => {
                                     res.json({ success: false, message: 'Thao tác lỗi', error:err })
                                 }
                                 else{
+                                    
+                                    // console.log("update status of detail order success")
                                     res.json({ 
                                         success: true, 
                                         message: 'Trạng thái chi tiết hóa đơn đã được cập nhật', 
